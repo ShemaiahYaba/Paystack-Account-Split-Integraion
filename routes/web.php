@@ -9,7 +9,14 @@ Route::prefix('test-paystack')->group(function () {
     Route::get('/verify/{reference}', [TestPaystackController::class, 'verify']);
 });
 
-// Simple test route
-Route::get('/test-route', function() {
-    return response()->json(['message' => 'Routes are working!']);
+// Add to routes/web.php
+Route::get('/test-debug', function() {
+    $service = new \App\Services\Members\Payment\PaystackService();
+
+    return response()->json([
+        'config_exists' => config('subaccounts.paystack') !== null,
+        'paystack_config' => config('services.paystack'),
+        'subaccounts' => config('subaccounts.paystack'),
+        'lagos_subaccount' => config('subaccounts.paystack.Lagos'),
+    ]);
 });

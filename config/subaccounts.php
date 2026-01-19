@@ -1,4 +1,3 @@
-// config/subaccounts.php
 <?php
 
 return [

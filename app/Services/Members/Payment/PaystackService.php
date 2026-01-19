@@ -16,18 +16,23 @@ class PaystackService
             throw new \Exception('Paystack public key not configured. Please set PAYSTACK_PUBLIC_KEY in your .env file.');
         }
 
+        // Fix the callback_url logic
+        $callbackUrl = $data['callback_url'] ?? null;
+        if (!$callbackUrl) {
+            // Try to generate route, fallback to simple URL
+            if (\Illuminate\Support\Facades\Route::has('payment.callback')) {
+                $callbackUrl = route('payment.callback');
+            } else {
+                $callbackUrl = config('app.url') . '/payment/callback';
+            }
+        }
+
         $payload = [
             'public_key' => $publicKey,
             'amount' => $data['amount'] * 100, // Convert to kobo
             'email' => $data['email'],
             'currency' => $data['currency'] ?? 'NGN',
-            'callback_url' => $data['callback_url'] ?? (function() {
-            try {
-                return route('payment.callback');
-            } catch (\Exception $e) {
-                return config('app.url') . '/payment/callback';
-            }
-        })(),
+            'callback_url' => $callbackUrl,
             'reference' => $data['reference'] ?? 'ADC_' . strtoupper(Str::random(12)),
         ];
 
