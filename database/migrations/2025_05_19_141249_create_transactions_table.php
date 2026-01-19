@@ -9,7 +9,7 @@ return new class extends Migration {
     {
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
-            
+
             $table->morphs('transactionable');
             $table->decimal('amount', 15, 2);
             $table->string('reference')->unique();
@@ -18,6 +18,9 @@ return new class extends Migration {
             $table->string('channel')->nullable(); // e.g., card, bank_transfer
             $table->string('provider')->nullable(); // e.g., paystack, flutterwave
             $table->string('description');
+            // Add to transactions table migration
+            $table->string('subaccount_code')->nullable(); // Track which subaccount was used
+            $table->string('user_state')->nullable(); // Snapshot of user's state at payment time
             $table->json('meta')->nullable();
             $table->timestamps();
         });

@@ -4,19 +4,63 @@ namespace App\Services\Members\Payment;
 
 use App\Models\Transaction;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class PaystackService
 {
     public static function preparePayload(array $data): array
     {
-        return [
-            'public_key' => config('services.paystack.public_key'),
+        $publicKey = config('services.paystack.public_key');
+
+        if (!$publicKey) {
+            throw new \Exception('Paystack public key not configured. Please set PAYSTACK_PUBLIC_KEY in your .env file.');
+        }
+
+        $payload = [
+            'public_key' => $publicKey,
             'amount' => $data['amount'] * 100, // Convert to kobo
             'email' => $data['email'],
             'currency' => $data['currency'] ?? 'NGN',
-            'callback_url' => $data['callback_url'] ?? route('payment.callback'),
+            'callback_url' => $data['callback_url'] ?? (function() {
+            try {
+                return route('payment.callback');
+            } catch (\Exception $e) {
+                return config('app.url') . '/payment/callback';
+            }
+        })(),
             'reference' => $data['reference'] ?? 'ADC_' . strtoupper(Str::random(12)),
         ];
+
+        // Add subaccount if user state is provided
+        if (isset($data['user_state'])) {
+            $subaccountCode = self::getSubaccountForState($data['user_state']);
+
+            if ($subaccountCode) {
+                $payload['subaccount'] = $subaccountCode;
+                // Since states get 100% and pay fees themselves
+                $payload['bearer'] = 'subaccount';
+
+                Log::info("Payment split configured", [
+                    'state' => $data['user_state'],
+                    'subaccount' => $subaccountCode,
+                    'reference' => $payload['reference']
+                ]);
+            } else {
+                Log::warning("No subaccount found for state: {$data['user_state']}");
+            }
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Get Paystack subaccount code for a given state
+     */
+    public static function getSubaccountForState(string $state): ?string
+    {
+        $subaccounts = config('subaccounts.paystack');
+
+        return $subaccounts[$state] ?? null;
     }
 
     public function verify($reference)
@@ -61,9 +105,10 @@ class PaystackService
                 'payment_gateway_charge' => $txData['fees'],
                 'payment_gateway_message' => $tx['message'],
                 'payment_gateway_method' => $txData['channel'],
-                // 'amount_paid_excluding_charges' => $transaction->total,
                 'status' => 'Paid',
                 'amount_paid' => $txData['amount'] / 100,
+                // Add subaccount info if present
+                'subaccount_code' => $txData['subaccount']['subaccount_code'] ?? null,
                 'authorization' => [
                     'authorization_code' => $authorization['authorization_code'],
                     'card_type' => $authorization['card_type'],
