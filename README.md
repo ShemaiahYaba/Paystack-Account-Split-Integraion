@@ -1,59 +1,186 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Paystack Account Split Integration
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel application that integrates Paystack's payment gateway with automatic account splitting across all 36 Nigerian states and the FCT. When a payment is initiated, it is routed to the appropriate state-level Paystack subaccount based on the payer's state, with transaction fees borne by the subaccount.
 
-## About Laravel
+## How It Works
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+1. A payment is initiated with the payer's Nigerian state.
+2. `PaystackService` looks up the Paystack subaccount code mapped to that state from `config/subaccounts.php`.
+3. If a subaccount is found, it is added to the payment payload along with `bearer: subaccount` so that the subaccount absorbs the transaction fee.
+4. The payload is used with the Paystack inline JS widget to collect payment on the frontend.
+5. After payment, the reference is verified against the Paystack API and the result is stored in the `transactions` table.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Requirements
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- PHP 8.2+
+- Composer
+- Node.js & npm
+- A [Paystack](https://paystack.com) account with subaccounts created for each Nigerian state
 
-## Learning Laravel
+## Setup
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### 1. Install dependencies
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+composer install
+npm install
+```
 
-## Laravel Sponsors
+### 2. Configure environment
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Copy the example environment file and fill in your values:
 
-### Premium Partners
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Open `.env` and set your Paystack credentials:
 
-## Contributing
+```env
+PAYSTACK_PUBLIC_KEY=pk_live_xxxxxxxxxxxxxxxxxxxx
+PAYSTACK_SECRET_KEY=sk_live_xxxxxxxxxxxxxxxxxxxx
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Then set the subaccount code for each state you operate in. Subaccount codes are created from your Paystack dashboard under **Settings → Subaccounts**.
 
-## Code of Conduct
+```env
+PAYSTACK_SUBACCT_LAGOS=SUBACCT_xxxxxxxxxxxxxxxx
+PAYSTACK_SUBACCT_ABUJA=SUBACCT_xxxxxxxxxxxxxxxx
+# ... repeat for all states
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+A full list of all 37 supported state variables is provided in `.env.example`.
 
-## Security Vulnerabilities
+### 3. Run migrations
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+php artisan migrate
+```
+
+### 4. Build frontend assets
+
+```bash
+npm run build
+```
+
+Or for local development with hot reload:
+
+```bash
+composer run dev
+```
+
+## Configuration
+
+### Paystack Credentials (`config/services.php`)
+
+| Key | Environment Variable | Description |
+|-----|---------------------|-------------|
+| `services.paystack.public_key` | `PAYSTACK_PUBLIC_KEY` | Paystack public key (used in the frontend) |
+| `services.paystack.secret` | `PAYSTACK_SECRET_KEY` | Paystack secret key (used for server-side verification) |
+
+### State Subaccounts (`config/subaccounts.php`)
+
+Each Nigerian state maps to a Paystack subaccount code. If a state has no configured subaccount, the payment proceeds without a split — the main account receives the full amount.
+
+```php
+// config/subaccounts.php
+return [
+    'paystack' => [
+        'Lagos' => env('PAYSTACK_SUBACCT_LAGOS'),
+        'Abuja' => env('PAYSTACK_SUBACCT_FCT'),
+        // 36 states + FCT
+    ],
+];
+```
+
+**Supported states:** Abia, Adamawa, Akwa Ibom, Anambra, Bauchi, Bayelsa, Benue, Borno, Cross River, Delta, Ebonyi, Edo, Ekiti, Enugu, FCT, Gombe, Imo, Jigawa, Kaduna, Kano, Katsina, Kebbi, Kogi, Kwara, Lagos, Nasarawa, Niger, Ogun, Ondo, Osun, Oyo, Plateau, Rivers, Sokoto, Taraba, Yobe, Zamfara.
+
+## Architecture
+
+```
+app/
+├── Http/Controllers/Test/
+│   └── TestPaystackController.php   # Test UI for payment flow
+├── Models/
+│   └── Transaction.php              # Polymorphic transaction record
+└── Services/Members/Payment/
+    └── PaystackService.php          # Core payment logic
+
+config/
+├── services.php                     # Paystack API credentials
+└── subaccounts.php                  # State → subaccount code mapping
+
+database/migrations/
+└── ..._create_transactions_table.php
+```
+
+### `PaystackService`
+
+| Method | Type | Description |
+|--------|------|-------------|
+| `preparePayload(array $data)` | `static` | Builds the Paystack payload; resolves the subaccount for the given `user_state` |
+| `getSubaccountForState(string $state)` | `static` | Returns the subaccount code for a state, or `null` if unconfigured |
+| `verify(string $reference)` | instance | Calls the Paystack verify API and returns a normalized result array |
+
+#### `preparePayload` input
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `email` | Yes | Payer's email address |
+| `amount` | Yes | Amount in **Naira** (converted to kobo internally) |
+| `currency` | No | Defaults to `NGN` |
+| `user_state` | No | Nigerian state name; triggers subaccount split when provided |
+| `callback_url` | No | Override the post-payment redirect URL |
+| `reference` | No | Custom reference; auto-generated as `ADC_XXXXXXXXXXXX` if omitted |
+
+### `Transaction` Model
+
+Polymorphic — can belong to any model (donations, dues, etc.) via `transactionable`.
+
+| Column | Description |
+|--------|-------------|
+| `transactionable_type/id` | Polymorphic owner |
+| `amount` | Decimal amount in Naira |
+| `reference` | Unique Paystack reference |
+| `status` | `pending`, `success`, `failed`, `refunded` |
+| `currency` | ISO 4217 currency code (default `NGN`) |
+| `channel` | `card`, `bank_transfer`, etc. |
+| `provider` | `paystack` |
+| `subaccount_code` | Subaccount used for this transaction |
+| `user_state` | Payer's state at payment time |
+| `meta` | JSON blob for extra data |
+
+## Routes
+
+| Method | URL | Description |
+|--------|-----|-------------|
+| `GET` | `/` | Landing page |
+| `GET` | `/test-paystack` | Test UI — form to initiate a payment |
+| `POST` | `/test-paystack/initialize` | Returns Paystack payload JSON for the selected state |
+| `GET` | `/test-paystack/verify/{reference}` | Verifies a transaction and displays the result |
+| `GET` | `/test-debug` | Debug endpoint — shows loaded config and subaccounts |
+
+## Test UI
+
+Visit `/test-paystack` in your browser to use the built-in test interface. Select a state, enter an email and amount, and the form will initialize a Paystack payment routed to the correct subaccount.
+
+## Running Tests
+
+```bash
+# All tests
+php artisan test --compact
+
+# Specific file
+php artisan test --compact tests/Feature/ExampleTest.php
+```
+
+## Security
+
+- Never expose `PAYSTACK_SECRET_KEY` on the frontend. It is only used server-side for transaction verification.
+- Always verify transactions server-side via `/test-paystack/verify/{reference}` before fulfilling any order or membership.
+- Rotate your Paystack keys immediately if they are ever committed to version control.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
